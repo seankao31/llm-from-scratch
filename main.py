@@ -1,5 +1,5 @@
 import re
-from simple_tokenizer import SimpleTokenizerV1
+from simple_tokenizer import SimpleTokenizer
 
 def load_file(filename):
     with open(filename, "r", encoding="utf-8") as f:
@@ -16,8 +16,9 @@ def tokenize(raw_text):
     return preprocessed
 
 def create_vocabulary(preprocessed):
-    all_words = sorted(set(preprocessed))
-    vocab = {token: integer for integer, token in enumerate(all_words)}
+    all_tokens = sorted(set(preprocessed))
+    all_tokens.extend(["<|endoftext|>", "<|unk|>"])
+    vocab = {token: integer for integer, token in enumerate(all_tokens)}
     return vocab
 
 def main():
@@ -25,9 +26,13 @@ def main():
     preprocessed = tokenize(raw_text)
     vocab = create_vocabulary(preprocessed)
 
-    tokenizer = SimpleTokenizerV1(vocab)
-    text = """"It's the last he painted, you know,"
-           Mrs. Gisburn said with pardonable pride."""
+    tokenizer = SimpleTokenizer(vocab)
+
+    text1 = "Hello, do you like tea?"
+    text2 = "In the sunlit terraces of the palace."
+    text = " <|endoftext|> ".join((text1, text2))
+    print(text)
+
     ids = tokenizer.encode(text)
     print(ids)
     print(tokenizer.decode(ids))
