@@ -1,23 +1,33 @@
 import tiktoken
+import torch
+from torch.utils.data import DataLoader
+from gpt_dataset import GPTDataset
 
 def load_file(filename):
     with open(filename, "r", encoding="utf-8") as f:
         raw_text = f.read()
-    print("Total number of character:", len(raw_text))
-    print(raw_text[:99])
     return raw_text
 
-def main():
+def create_dataloader(txt, batch_size=4, max_length=256, stride=128, shuffle=True, drop_last=True, num_workers=0):
     tokenizer = tiktoken.get_encoding("gpt2")
+    dataset = GPTDataset(txt, tokenizer, max_length, stride)
+    dataloader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        drop_last=drop_last,
+        num_workers=num_workers
+    )
+    return dataloader
 
-    text1 = "Hello, do you like tea?"
-    text2 = "In the sunlit terraces of the palace."
-    text = " <|endoftext|> ".join((text1, text2))
-    print(text)
+def main():
+    raw_text = load_file("the-verdict.txt")
 
-    ids = tokenizer.encode(text, allowed_special={"<|endoftext|>"})
-    print(ids)
-    print(tokenizer.decode(ids))
+    dataloader = create_dataloader(raw_text, batch_size=8, max_length=4, stride=4, shuffle=False)
+    data_iter = iter(dataloader)
+    inputs, targets = next(data_iter)
+    print(inputs)
+    print(targets)
 
 if __name__ == "__main__":
     main()
