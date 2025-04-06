@@ -2,7 +2,7 @@ import tiktoken
 import torch
 from torch.utils.data import DataLoader
 from gpt_dataset import GPTDataset
-from causal_attention import CausalAttention
+from multi_head_attention import MultiHeadAttention
 
 def load_file(filename):
     with open(filename, "r", encoding="utf-8") as f:
@@ -58,11 +58,12 @@ def test_attention():
     )
     batch = torch.stack((inputs, inputs), dim=0)
     torch.manual_seed(123)
-    d_in = batch.shape[-1]
-    d_out = 2
-    context_length = batch.shape[1]
-    ca = CausalAttention(d_in, d_out, context_length, 0.0)
-    print(ca(batch))
+    batch_size, context_length, d_in = batch.shape
+    d_out = 768
+    mha = MultiHeadAttention(d_in, d_out, 1024, 0.0, num_heads=12)
+    context_vecs = mha(batch)
+    print(context_vecs)
+    print(context_vecs.shape)
 
 if __name__ == "__main__":
     test_attention()
