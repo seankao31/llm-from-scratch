@@ -2,7 +2,7 @@ import tiktoken
 import torch
 from torch.utils.data import DataLoader
 from gpt_dataset import GPTDataset
-from multi_head_attention import MultiHeadAttention
+from gpt_model import GPTConfig, GPTModel
 
 def load_file(filename):
     with open(filename, "r", encoding="utf-8") as f:
@@ -22,48 +22,31 @@ def create_dataloader(txt, batch_size=4, max_length=256, stride=128, shuffle=Tru
     return dataloader
 
 def main():
-    raw_text = load_file("the-verdict.txt")
-
-    vocab_size = 50257
-    output_dim = 256
-    token_embedding_layer = torch.nn.Embedding(vocab_size, output_dim)
-
-    max_length = 4
-    dataloader = create_dataloader(raw_text, batch_size=8, max_length=max_length, stride=max_length, shuffle=False)
-    data_iter = iter(dataloader)
-    inputs, targets = next(data_iter)
-    print(inputs)
-    print(targets)
-
-    token_embeddings = token_embedding_layer(inputs)
-    print(token_embeddings.shape)
-
-    context_length = max_length
-    pos_embedding_layer = torch.nn.Embedding(context_length, output_dim)
-    pos_embeddings = pos_embedding_layer(torch.arange(context_length))
-    print(pos_embeddings.shape)
-
-    # 4x256 pos_embeddings added to each 4x256 token embedding in batch
-    input_embeddings = token_embeddings + pos_embeddings
-    print(input_embeddings.shape)
-
-def test_attention():
-    inputs = torch.tensor(
-        [[0.43, 0.15, 0.89],
-         [0.55, 0.87, 0.66],
-         [0.57, 0.85, 0.64],
-         [0.22, 0.58, 0.33],
-         [0.77, 0.25, 0.10],
-         [0.05, 0.80, 0.55]]
+    GPT_CONFIG_124M = GPTConfig(
+        vocab_size=50257,
+        context_length=1024,
+        emb_dim=768,
+        n_heads=12,
+        n_layers=12,
+        drop_rate=0.1,
+        qkv_bias=False
     )
-    batch = torch.stack((inputs, inputs), dim=0)
+    
+    tokenizer = tiktoken.get_encoding("gpt2")
+    batch = []
+    txt1 = "Every effort moves you"
+    txt2 = "Every day holds a"
+
+    batch.append(torch.tensor(tokenizer.encode(txt1)))
+    batch.append(torch.tensor(tokenizer.encode(txt2)))
+    batch = torch.stack(batch, dim=0)
+    print(batch)
+
     torch.manual_seed(123)
-    batch_size, context_length, d_in = batch.shape
-    d_out = 768
-    mha = MultiHeadAttention(d_in, d_out, 1024, 0.0, num_heads=12)
-    context_vecs = mha(batch)
-    print(context_vecs)
-    print(context_vecs.shape)
+    model = GPTModel(GPT_CONFIG_124M)
+    logits = model(batch)
+    print("Output shape:", logits.shape)
+    print(logits)
 
 if __name__ == "__main__":
-    test_attention()
+    main()
