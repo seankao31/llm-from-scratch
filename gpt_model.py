@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 import torch
 from torch import nn
+from layer_norm import LayerNorm
 
 @dataclass
 class GPTConfig:
@@ -35,13 +36,6 @@ class GPTModel(nn.Module):
 
 class TransformerBlock(nn.Module):
     def __init__(self, cfg):
-        super().__init__()
-
-    def forward(self, x):
-        return x
-
-class LayerNorm(nn.Module):
-    def __init__(self, normalized_shape, eps=1e-5):
         super().__init__()
 
     def forward(self, x):
