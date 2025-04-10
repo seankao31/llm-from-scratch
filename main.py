@@ -2,7 +2,8 @@ import tiktoken
 import torch
 from torch.utils.data import DataLoader
 from gpt_dataset import GPTDataset
-from gpt_model import GPTConfig, GPTModel
+from gpt_config import GPTConfig
+from gpt_model import GPTModel
 
 def load_file(filename):
     with open(filename, "r", encoding="utf-8") as f:

@@ -1,6 +1,6 @@
 from torch import nn
 from feed_forward import FeedForward
-from gpt_model import GPTConfig
+from gpt_config import GPTConfig
 from layer_norm import LayerNorm
 from multi_head_attention import MultiHeadAttention
 
