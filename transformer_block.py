@@ -12,13 +12,13 @@ class TransformerBlock(nn.Module):
             d_out=cfg.emb_dim,
             context_length=cfg.context_length,
             num_heads=cfg.n_heads,
-            dropout=cfg.drop_rate,
+            dropout=cfg.drop_rate_attn,
             qkv_bias=cfg.qkv_bias
         )
         self.ff = FeedForward(cfg)
         self.norm1 = LayerNorm(cfg.emb_dim)
         self.norm2 = LayerNorm(cfg.emb_dim)
-        self.drop = nn.Dropout(cfg.drop_rate)
+        self.drop = nn.Dropout(cfg.drop_rate_shortcut)
 
     def forward(self, x):
         shortcut = x
