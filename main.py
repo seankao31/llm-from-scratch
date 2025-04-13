@@ -234,7 +234,7 @@ def main():
         timer.mark("Model moved to device")
         optimizer = torch.optim.AdamW(model.parameters(), lr=0.0004, weight_decay=0.1)
         num_epochs = 10
-        timer.mark("Train prepared")
+        timer.skip()
         train_losses, val_losses, tokens_seen = train_model(
             model, train_loader, val_loader, optimizer, device, tokenizer,
             num_epochs=num_epochs, eval_freq=5, eval_iter=5,

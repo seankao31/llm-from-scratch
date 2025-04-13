@@ -19,13 +19,19 @@ class SegmentedTimer:
         self.segments.append((segment_label, elapsed))
         self.last = now
 
+    def skip(self):
+        """Timer updates its internal state without recording a segment."""
+        now = time.time()
+        self.last = now
+
     def __exit__(self, exc_type, exc_value, traceback):
         total_time = time.time() - self.start
         self.segments.append((self.label, total_time))
 
+        max_time_len = max(len(f"{seg_time:.4f}") for _, seg_time in self.segments)
         max_label_len = max(len(label) for label, _ in self.segments)
         lines = [
-            f"{seg_label:{max_label_len + 1}s}: {seg_time:.4f} seconds"
+            f"{seg_label:{max_label_len + 1}s}: {seg_time:>{max_time_len}.4f} seconds"
             for seg_label, seg_time in self.segments
         ]
         total_width = max(len(line) for line in lines)
