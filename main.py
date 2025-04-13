@@ -4,6 +4,14 @@ from torch.utils.data import DataLoader
 from gpt_dataset import GPTDataset
 from gpt_config import GPTConfig
 from gpt_model import GPTModel
+from segmented_timer import SegmentedTimer
+
+if torch.cuda.is_available():
+    DEVICE = torch.device("cuda")
+elif torch.backends.mps.is_available():
+    DEVICE = torch.device("mps")
+else:
+    DEVICE = torch.device("cpu")
 
 # Smaller model for training on single laptop
 GPT_CONFIG_124M_MINI = GPTConfig(
@@ -143,21 +151,79 @@ def token_ids_to_text(token_ids, tokenizer):
     flat = token_ids.squeeze(0)
     return tokenizer.decode(flat.tolist())
 
-def main():
-    start_context = "Every effort moves you"
-    tokenizer = tiktoken.get_encoding("gpt2")
-
-    torch.manual_seed(123)
-    model = GPTModel(GPT_CONFIG_124M_MINI)
-    model.eval()
-    token_ids = generate_text(
-        model=model,
-        idx=text_to_token_ids(start_context, tokenizer),
-        max_new_tokens=10,
-        context_size=GPT_CONFIG_124M.context_length
+def calc_loss_batch(input_batch, target_batch, model, device):
+    input_batch = input_batch.to(device)
+    target_batch = target_batch.to(device)
+    logits = model(input_batch)
+    loss = torch.nn.functional.cross_entropy(
+        logits.flatten(0, 1), target_batch.flatten()
     )
-    decoded_text = token_ids_to_text(token_ids, tokenizer)
-    print(decoded_text)
+    return loss
+
+def calc_loss_loader(data_loader, model, device, num_batches=None):
+    if len(data_loader) == 0:
+        return float("nan")
+
+    if num_batches is None:
+        num_batches = len(data_loader)
+    else:
+        num_batches = min(num_batches, len(data_loader))
+
+    total_loss = 0
+    for i, (input_batch, target_batch) in enumerate(data_loader):
+        if i >= num_batches:
+            break
+        loss = calc_loss_batch(input_batch, target_batch, model, device)
+        total_loss += loss.item()
+    return total_loss / num_batches
+
+def main():
+    file_path = "the-verdict.txt"
+    text_data = load_file(file_path)
+
+    train_ratio = 0.9
+    split_idx = int(train_ratio * len(text_data))
+    train_data = text_data[:split_idx]
+    val_data = text_data[split_idx:]
+
+    config = GPT_CONFIG_124M_MINI
+
+    train_loader = create_dataloader(
+        train_data,
+        batch_size=2,
+        max_length=config.context_length,
+        stride=config.context_length,
+        drop_last=True,
+        shuffle=True,
+        num_workers=0
+    )
+    val_loader = create_dataloader(
+        val_data,
+        batch_size=2,
+        max_length=config.context_length,
+        stride=config.context_length,
+        drop_last=False,
+        shuffle=False,
+        num_workers=0
+    )
+
+    model = GPTModel(config)
+    devices = [
+        torch.device("cpu"),
+        torch.device("mps")
+    ]
+    for device in devices:
+        print(f"\nTesting on device: {device}")
+        with SegmentedTimer() as timer:
+            model.to(device)
+            timer.mark("Model moved to device")
+            with torch.no_grad():
+                train_loss = calc_loss_loader(train_loader, model, device)
+                val_loss = calc_loss_loader(val_loader, model, device)
+            timer.mark("Loss caculated")
+        print("Training loss:", train_loss)
+        print("Validation loss:", val_loss)
 
 if __name__ == "__main__":
+    torch.manual_seed(123)
     main()
