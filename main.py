@@ -8,8 +8,8 @@ from segmented_timer import SegmentedTimer
 
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
-elif torch.backends.mps.is_available():
-    DEVICE = torch.device("mps")
+# elif torch.backends.mps.is_available():
+#     DEVICE = torch.device("mps")
 else:
     DEVICE = torch.device("cpu")
 
@@ -108,40 +108,6 @@ def generate_text(model, idx, max_new_tokens, context_size):
         idx = torch.cat((idx, idx_next), dim=-1)
     return idx
 
-def test_model(cfg: GPTConfig):
-    tokenizer = tiktoken.get_encoding("gpt2")
-    batch = []
-    txt1 = "Every effort moves you"
-    txt2 = "Every day holds a"
-
-    batch.append(torch.tensor(tokenizer.encode(txt1)))
-    batch.append(torch.tensor(tokenizer.encode(txt2)))
-    batch = torch.stack(batch, dim=0)
-    # print(batch)
-
-    torch.manual_seed(123)
-    model = GPTModel(cfg)
-    logits = model(batch)
-    print("Output shape:", logits.shape)
-    # print(logits)
-
-    att_params = sum(p.numel() for p in model.trf_blocks[0].att.parameters())
-    print(f"Number of parameters in one attention module: {att_params:,}")
-    ff_params = sum(p.numel() for p in model.trf_blocks[0].ff.parameters())
-    print(f"Number of parameters in one feed forward module: {ff_params:,}")
-
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"Total number of parameters: {total_params:,}")
-    # Assume float32, 4 bytes per parameter
-    total_size_bytes = total_params * 4
-    total_size_mb = total_size_bytes / (1024 * 1024)
-    print(f"Total size of the model: {total_size_mb:.2f} MB")
-
-def test_models():
-    configs = [GPT_CONFIG_124M, GPT_CONFIG_MEDIUM, GPT_CONFIG_LARGE, GPT_CONFIG_XL]
-    for cfg in configs:
-        test_model(cfg)
-
 def text_to_token_ids(text, tokenizer):
     encoded = tokenizer.encode(text, allowed_special={TOKEN_END_OF_TEXT})
     # Add batch dimension
@@ -177,6 +143,57 @@ def calc_loss_loader(data_loader, model, device, num_batches=None):
         total_loss += loss.item()
     return total_loss / num_batches
 
+def evaluate_model(model: GPTModel, train_loader: DataLoader, val_loader: DataLoader,
+                   device: torch.device, eval_iter: int):
+    model.eval()
+    with torch.no_grad():
+        train_loss = calc_loss_loader(train_loader, model, device, eval_iter)
+        val_loss = calc_loss_loader(val_loader, model, device, eval_iter)
+    model.train()
+    return train_loss, val_loss
+
+def generate_and_print_sample(model: GPTModel, tokenizer: tiktoken.Encoding, device: torch.device,
+                              start_context: str):
+    model.eval()
+    context_size = model.pos_emb.weight.shape[0]
+    encoded = text_to_token_ids(start_context, tokenizer).to(device)
+    with torch.no_grad():
+        token_ids = generate_text(model, idx=encoded, max_new_tokens=50, context_size=context_size)
+    decoded_text = token_ids_to_text(token_ids, tokenizer)
+    # Compact print format
+    print(decoded_text.replace("\n", " "))
+    model.train()
+
+def train_model(
+        model: GPTModel, train_loader: DataLoader, val_loader: DataLoader,
+        optimizer:torch.optim.Optimizer, device: torch.device, tokenizer: tiktoken.Encoding,
+        num_epochs: int, eval_freq: int, eval_iter: int, start_context: int):
+    # For tracking progress
+    train_losses, val_losses, track_tokens_seen = [], [], []
+    tokens_seen, global_step = 0, -1
+
+    for epoch in range(num_epochs):
+        model.train()
+        for input_batch, target_batch in train_loader:
+            optimizer.zero_grad()
+            loss = calc_loss_batch(input_batch, target_batch, model, device)
+            loss.backward()
+            optimizer.step()
+
+            tokens_seen += input_batch.numel()
+            global_step += 1
+            if global_step % eval_freq == 0:
+                train_loss, val_loss = evaluate_model(
+                    model, train_loader, val_loader, device, eval_iter)
+                train_losses.append(train_loss)
+                val_losses.append(val_loss)
+                track_tokens_seen.append(tokens_seen)
+                print(f"Ep {epoch+1} (Step {global_step:06d}): "
+                      f"Train loss {train_loss:.3f}, "
+                      f"Val loss {val_loss:.3f}")
+        generate_and_print_sample(model, tokenizer, device, start_context)
+    return train_losses, val_losses, track_tokens_seen
+
 def main():
     file_path = "the-verdict.txt"
     text_data = load_file(file_path)
@@ -208,22 +225,22 @@ def main():
     )
 
     model = GPTModel(config)
-    devices = [
-        torch.device("cpu"),
-        torch.device("mps")
-    ]
-    for device in devices:
-        print(f"\nTesting on device: {device}")
-        with SegmentedTimer() as timer:
-            model.to(device)
-            timer.mark("Model moved to device")
-            with torch.no_grad():
-                train_loss = calc_loss_loader(train_loader, model, device)
-                val_loss = calc_loss_loader(val_loader, model, device)
-            timer.mark("Loss caculated")
-        print("Training loss:", train_loss)
-        print("Validation loss:", val_loss)
+    tokenizer = tiktoken.get_encoding("gpt2")
+    device = DEVICE
+    torch.manual_seed(123)
+    print(f"\nTesting on device: {device}")
+    with SegmentedTimer() as timer:
+        model.to(device)
+        timer.mark("Model moved to device")
+        optimizer = torch.optim.AdamW(model.parameters(), lr=0.0004, weight_decay=0.1)
+        num_epochs = 10
+        timer.mark("Train prepared")
+        train_losses, val_losses, tokens_seen = train_model(
+            model, train_loader, val_loader, optimizer, device, tokenizer,
+            num_epochs=num_epochs, eval_freq=5, eval_iter=5,
+            start_context="Every effort moves you"
+        )
+        timer.mark("Train completed")
 
 if __name__ == "__main__":
-    torch.manual_seed(123)
     main()
