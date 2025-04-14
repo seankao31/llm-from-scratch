@@ -96,7 +96,8 @@ def create_dataloader(txt, batch_size=4, max_length=256, stride=128, shuffle=Tru
     )
     return dataloader
 
-def generate_text(model, idx, max_new_tokens, context_size):
+def generate_text(model, idx, max_new_tokens, context_size,
+                  temperature=0.0, top_k=None, eos_id=None):
     """
     idx: torch.Tensor (batch, n_tokens)
     """
@@ -104,9 +105,31 @@ def generate_text(model, idx, max_new_tokens, context_size):
         idx_cond = idx[:, -context_size:]
         with torch.no_grad():
             logits = model(idx_cond)
-
         logits = logits[:, -1, :]
-        idx_next = torch.argmax(logits, dim=-1, keepdim=True)
+
+        if top_k is not None:
+            # Set the logit values of tokens that are below the top-k selection to -inf
+            top_logits, _ = torch.topk(logits, top_k)
+            min_val = top_logits[:, -1]
+            logits = torch.where(
+                logits < min_val,
+                torch.tensor(float('-inf')).to(logits.device),
+                logits
+            )
+
+        if temperature > 0.0:
+            # Temperature scaling
+            logits /= temperature
+            probs = torch.softmax(logits, dim=-1)
+            idx_next = torch.multinomial(probs, num_samples=1)
+        else:
+            # Greedy
+            idx_next = torch.argmax(logits, dim=-1, keepdim=True)
+
+        # Stop generating early if end-of-sequence token is encountered
+        if idx_next == eos_id:
+            break
+
         idx = torch.cat((idx, idx_next), dim=-1)
     return idx
 
