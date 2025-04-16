@@ -3,12 +3,14 @@ import torch
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import numpy as np
+import pandas as pd
 from torch.utils.data import DataLoader
 from gpt_dataset import GPTDataset
 from gpt_download import download_and_load_gpt2
 from gpt_config import GPTConfig
 from gpt_model import GPTModel
 from segmented_timer import SegmentedTimer
+from spam_download import DATA_FILE_PATH
 
 if torch.cuda.is_available():
     DEVICE = torch.device("cuda")
@@ -347,7 +349,7 @@ def load_weights_into_gpt(gpt: GPTModel, params: dict[str, list[dict]]):
     # Weight tying. Reuse token embedding weights in the output layer
     gpt.out_head.weight = assign(gpt.out_head.weight, params["wte"])
 
-def main():
+def test_pretrained_models():
     model_size = "124M"
     for model_size, cfg in GPT_CONFIGS.items():
         print("Loading ", model_size)
@@ -391,6 +393,43 @@ def main():
         )
         loss = calc_loss_loader(data_loader, gpt, device)
         print("Loss: ", loss)
+
+def create_balanced_dataset(df: pd.DataFrame):
+    """
+    Simply undersample the dataset. There are other methods to handle class imbalances.
+    """
+    num_spam = df[df["Label"] == "spam"].shape[0]
+    ham_subset = df[df["Label"] == "ham"].sample(num_spam, random_state=123)
+    balanced_df = pd.concat([ham_subset, df[df["Label"] == "spam"]])
+    return balanced_df
+
+def random_split(df: pd.DataFrame, train_frac, validation_frac):
+    """
+    Split the dataset into three parts: training, validation, testing.
+    """
+    # Shuffle the entire DataFrame
+    df = df.sample(frac=1, random_state=123).reset_index(drop=True)
+
+    train_end = int(len(df) * train_frac)
+    validation_end = train_end + int(len(df) * validation_frac)
+
+    train_df = df[:train_end]
+    validation_df = df[train_end:validation_end]
+    test_df = df[validation_end:]
+    return train_df, validation_df, test_df
+
+def prepare_spam():
+    df = pd.read_csv(DATA_FILE_PATH, sep="\t", header=None, names=["Label", "Text"])
+    balanced_df = create_balanced_dataset(df)
+    balanced_df["Label"] = balanced_df["Label"].map({"ham": 0, "spam": 1})
+
+    train_df, validation_df, test_df = random_split(balanced_df, 0.7, 0.1)
+    train_df.to_csv("train.csv", index=None)
+    validation_df.to_csv("validation.csv", index=None)
+    test_df.to_csv("test.csv", index=None)
+
+def main():
+    prepare_spam()
 
 if __name__ == "__main__":
     main()
