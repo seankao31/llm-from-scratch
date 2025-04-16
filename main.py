@@ -349,33 +349,48 @@ def load_weights_into_gpt(gpt: GPTModel, params: dict[str, list[dict]]):
 
 def main():
     model_size = "124M"
-    assert model_size in GPT_CONFIGS.keys()
+    for model_size, cfg in GPT_CONFIGS.items():
+        print("Loading ", model_size)
 
-    tokenizer = tiktoken.get_encoding("gpt2")
-    device = DEVICE
+        tokenizer = tiktoken.get_encoding("gpt2")
+        device = DEVICE
 
-    settings, params = download_and_load_gpt2(model_size=model_size, models_dir="gpt2")
-    cfg = GPT_CONFIGS[model_size]
-    # Bias vectors are not commonly used in LLMs anymore.
-    # However, it was used for the pretrained GPT2 weights.
-    cfg.qkv_bias = True
+        settings, params = download_and_load_gpt2(model_size=model_size, models_dir="gpt2")
+        # Bias vectors are not commonly used in LLMs anymore.
+        # However, it was used for the pretrained GPT2 weights.
+        cfg.qkv_bias = True
 
-    gpt = GPTModel(cfg)
-    gpt.eval()
-    load_weights_into_gpt(gpt, params)
-    gpt.to(device)
+        gpt = GPTModel(cfg)
+        gpt.eval()
+        load_weights_into_gpt(gpt, params)
+        gpt.to(device)
 
-    torch.manual_seed(123)
-    token_ids = generate_text(
-        model=gpt,
-        idx=text_to_token_ids("Every effort moves you", tokenizer).to(device),
-        max_new_tokens=25,
-        context_size=cfg.context_length,
-        top_k=50,
-        temperature=1.5
-    )
-    print("Output text:")
-    print(token_ids_to_text(token_ids, tokenizer))
+        torch.manual_seed(123)
+        token_ids = generate_text(
+            model=gpt,
+            idx=text_to_token_ids("Every effort moves you", tokenizer).to(device),
+            max_new_tokens=25,
+            context_size=cfg.context_length,
+            top_k=50,
+            temperature=1.5
+        )
+        print("Output text:")
+        print(token_ids_to_text(token_ids, tokenizer))
+
+        file_path = "the-verdict.txt"
+        text_data = load_file(file_path)
+
+        data_loader = create_dataloader(
+            text_data,
+            batch_size=2,
+            max_length=cfg.context_length,
+            stride=cfg.context_length,
+            drop_last=True,
+            shuffle=True,
+            num_workers=0
+        )
+        loss = calc_loss_loader(data_loader, gpt, device)
+        print("Loss: ", loss)
 
 if __name__ == "__main__":
     main()
