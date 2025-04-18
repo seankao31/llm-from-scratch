@@ -10,6 +10,7 @@ from gpt_download import download_and_load_gpt2
 from gpt_config import GPTConfig
 from gpt_model import GPTModel
 from segmented_timer import SegmentedTimer
+from spam_dataset import SpamDataset
 from spam_download import DATA_FILE_PATH
 
 if torch.cuda.is_available():
@@ -428,8 +429,47 @@ def prepare_spam():
     validation_df.to_csv("validation.csv", index=None)
     test_df.to_csv("test.csv", index=None)
 
+def spam_dataloader():
+    tokenizer = tiktoken.get_encoding("gpt2")
+    train_dataset = SpamDataset("train.csv", tokenizer)
+    validation_dataset = SpamDataset(
+        "validation.csv", tokenizer, max_length=train_dataset.max_length)
+    test_dataset = SpamDataset("test.csv", tokenizer, max_length=train_dataset.max_length)
+
+    num_workers = 0
+    batch_size = 8
+    torch.manual_seed(123)
+    train_loader = DataLoader(
+        dataset=train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        drop_last=True
+    )
+    validation_loader = DataLoader(
+        dataset=validation_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        drop_last=False
+    )
+    test_loader = DataLoader(
+        dataset=test_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        drop_last=False
+    )
+
+    for input_batch, target_batch in train_loader:
+        pass
+    print(input_batch.shape)
+    print(target_batch.shape)
+
+    print(f"{len(train_loader)} train batches")
+    print(f"{len(validation_loader)} validation batches")
+    print(f"{len(test_loader)} test batches")
+
 def main():
-    prepare_spam()
+    spam_dataloader()
 
 if __name__ == "__main__":
     main()

@@ -24,4 +24,5 @@ def download_and_unzip_spam_data(url, zip_path, extracted_path, data_file_path):
     os.rename(original_file_path, data_file_path)
     print(f"File downloaded and saved as {data_file_path}")
 
-download_and_unzip_spam_data(URL, ZIP_PATH, EXTRACTED_PATH, DATA_FILE_PATH)
+if __name__ == "__main__":
+    download_and_unzip_spam_data(URL, ZIP_PATH, EXTRACTED_PATH, DATA_FILE_PATH)
