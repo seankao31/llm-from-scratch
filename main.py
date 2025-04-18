@@ -431,6 +431,7 @@ def prepare_spam():
 
 def spam_dataloader():
     tokenizer = tiktoken.get_encoding("gpt2")
+    # pad_to_full_context_length=False
     train_dataset = SpamDataset("train.csv", tokenizer)
     validation_dataset = SpamDataset(
         "validation.csv", tokenizer, max_length=train_dataset.max_length)
@@ -468,8 +469,45 @@ def spam_dataloader():
     print(f"{len(validation_loader)} validation batches")
     print(f"{len(test_loader)} test batches")
 
+def fine_tune_spam(cfg: GPTConfig, model: GPTModel, fine_tune_whole=False):
+    if not fine_tune_whole:
+        for param in model.parameters():
+            param.requires_grad = False
+        # Make last transformer block and final layer normalization trainable as well
+        for param in model.trf_blocks[-1].parameters():
+            param.requires_grad = True
+        for param in model.final_norm.parameters():
+            param.requires_grad = True
+
+    torch.manual_seed(123)
+    num_classes = 2
+    model.out_head = torch.nn.Linear(in_features=cfg.emb_dim, out_features=num_classes)
+
+    # first_token=False
+
 def main():
-    spam_dataloader()
+    model_size = "124M"
+    tokenizer = tiktoken.get_encoding("gpt2")
+    settings, params = download_and_load_gpt2(model_size, "gpt2")
+    cfg = GPT_CONFIGS["124M"]
+    cfg.qkv_bias = True
+    # drop out 0?
+    model = GPTModel(cfg)
+    load_weights_into_gpt(model, params)
+    model.eval()
+    text_1 = "Every effort moves you"
+    token_ids = generate_text(model, text_to_token_ids(text_1, tokenizer), 15, cfg.context_length)
+    print(token_ids_to_text(token_ids, tokenizer))
+
+    text_2 = (
+        "Is the following text 'spam'? Answer with 'yes' or 'no':"
+        " 'You are a winner you have been specially"
+        " selected to receive $1000 cash or a $2000 award.'"
+    )
+    token_ids = generate_text(model, text_to_token_ids(text_2, tokenizer), 23, cfg.context_length)
+    print(token_ids_to_text(token_ids, tokenizer))
+
+    fine_tune_spam(cfg, model)
 
 if __name__ == "__main__":
     main()
