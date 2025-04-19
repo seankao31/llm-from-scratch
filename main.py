@@ -431,7 +431,7 @@ def prepare_spam():
 
 def spam_dataloader():
     tokenizer = tiktoken.get_encoding("gpt2")
-    # pad_to_full_context_length=False
+    # TODO: pad_to_full_context_length=False
     train_dataset = SpamDataset("train.csv", tokenizer)
     validation_dataset = SpamDataset(
         "validation.csv", tokenizer, max_length=train_dataset.max_length)
@@ -469,6 +469,8 @@ def spam_dataloader():
     print(f"{len(validation_loader)} validation batches")
     print(f"{len(test_loader)} test batches")
 
+    return train_loader, validation_loader, test_loader
+
 def fine_tune_spam(cfg: GPTConfig, model: GPTModel, fine_tune_whole=False):
     if not fine_tune_whole:
         for param in model.parameters():
@@ -483,7 +485,53 @@ def fine_tune_spam(cfg: GPTConfig, model: GPTModel, fine_tune_whole=False):
     num_classes = 2
     model.out_head = torch.nn.Linear(in_features=cfg.emb_dim, out_features=num_classes)
 
-    # first_token=False
+    # TODO: first_token=False
+
+def calc_spam_accuracy_loader(data_loader: DataLoader, model: GPTModel, device, num_batches=None):
+    model.eval()
+    correct_predictions, num_examples = 0, 0
+
+    if num_batches is None:
+        num_batches = len(data_loader)
+    else:
+        num_batches = min(num_batches, len(data_loader))
+    for i, (input_batch, target_batch) in enumerate(data_loader):
+        if i >= num_batches:
+            break
+        input_batch = input_batch.to(device)
+        target_batch = target_batch.to(device)
+        with torch.no_grad():
+            # Last output token
+            logits = model(input_batch)[:, -1, :]
+        predicted_labels = torch.argmax(logits, dim=-1)
+        num_examples += predicted_labels.shape[0]
+        correct_predictions += (predicted_labels == target_batch).sum().item()
+    return correct_predictions / num_examples
+
+def calc_spam_loss_batch(input_batch, target_batch, model, device):
+    input_batch = input_batch.to(device)
+    target_batch = target_batch.to(device)
+    # Last output token
+    logits = model(input_batch)[:, -1, :]
+    loss = torch.nn.functional.cross_entropy(logits, target_batch)
+    return loss
+
+def calc_spam_loss_loader(data_loader, model, device, num_batches=None):
+    if len(data_loader) == 0:
+        return float("nan")
+
+    if num_batches is None:
+        num_batches = len(data_loader)
+    else:
+        num_batches = min(num_batches, len(data_loader))
+
+    total_loss = 0
+    for i, (input_batch, target_batch) in enumerate(data_loader):
+        if i >= num_batches:
+            break
+        loss = calc_spam_loss_batch(input_batch, target_batch, model, device)
+        total_loss += loss.item()
+    return total_loss / num_batches
 
 def main():
     model_size = "124M"
@@ -507,7 +555,28 @@ def main():
     token_ids = generate_text(model, text_to_token_ids(text_2, tokenizer), 23, cfg.context_length)
     print(token_ids_to_text(token_ids, tokenizer))
 
+    device = DEVICE
     fine_tune_spam(cfg, model)
+    model.to(device)
+    torch.manual_seed(123)
+    train_loader, validation_loader, test_loader = spam_dataloader()
+    train_accuracy = calc_spam_accuracy_loader(train_loader, model, device, num_batches=10)
+    validation_accuracy = calc_spam_accuracy_loader(
+        validation_loader, model, device, num_batches=10)
+    test_accuracy = calc_spam_accuracy_loader(test_loader, model, device, num_batches=10)
+
+    print(f"Train accuracy: {train_accuracy*100:.2f}%")
+    print(f"Validation accuracy: {validation_accuracy*100:.2f}%")
+    print(f"Test accuracy: {test_accuracy*100:.2f}%")
+
+    with torch.no_grad():
+        train_loss = calc_spam_loss_loader(train_loader, model, device, num_batches=5)
+        validation_loss = calc_spam_loss_loader(validation_loader, model, device, num_batches=5)
+        test_loss = calc_spam_loss_loader(test_loader, model, device, num_batches=5)
+    
+    print(f"Train loss: {train_loss:.3f}")
+    print(f"Validation loss: {validation_loss:.3f}")
+    print(f"Test loss: {test_loss:.3f}")
 
 if __name__ == "__main__":
     main()
